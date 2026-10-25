@@ -2,7 +2,6 @@
 
 import itertools
 import math
-import time
 from io import StringIO
 
 import folium
@@ -165,43 +164,72 @@ def optimize_route(points):
 
 
 # -----------------------------
-# OpenStreetMap geocoding
+# Place-name geocoding
 # -----------------------------
 @st.cache_data(show_spinner=False)
 def geocode_place(place):
     """
-    Geocode a user-entered place using Nominatim.
-    The application identifies itself with a custom User-Agent and spaces
-    requests to respect the public service policy.
+    Geocode a user-entered city or place with the Open-Meteo geocoding API.
     """
-    time.sleep(1.05)
-
-    url = "https://nominatim.openstreetmap.org/search"
+    url = "https://geocoding-api.open-meteo.com/v1/search"
     params = {
-        "q": place,
-        "format": "jsonv2",
-        "limit": 1,
+        "name": place,
+        "count": 1,
+        "language": "en",
+        "format": "json",
     }
-    headers = {
-        "User-Agent": "College-Drone-Delivery-Route-Optimizer/1.0"
-    }
-
-    response = requests.get(
-        url, params=params, headers=headers, timeout=15
-    )
+    response = requests.get(url, params=params, timeout=15)
     if response.status_code == 429:
         raise ValueError(
-            "OpenStreetMap's geocoder is temporarily rate-limiting requests. "
+            "The place search service is temporarily rate-limiting requests. "
             "Wait and try again, or provide Latitude and Longitude columns in "
-            "your location CSV to skip geocoding."
+            "your location CSV to skip place search."
         )
     response.raise_for_status()
-    data = response.json()
+    results = response.json().get("results", [])
 
-    if not data:
-        raise ValueError(f"Location not found: {place}")
+    if not results:
+        normalized_place = place.strip()
+        if "," in normalized_place:
+            normalized_place = normalized_place.split(
+                ",", maxsplit=1
+            )[0].strip()
+        elif normalized_place.lower().endswith(" india"):
+            normalized_place = normalized_place[:-6].strip()
 
-    return float(data[0]["lat"]), float(data[0]["lon"]), data[0]["display_name"]
+        if normalized_place and normalized_place != place.strip():
+            params["name"] = normalized_place
+            response = requests.get(url, params=params, timeout=15)
+            if response.status_code == 429:
+                raise ValueError(
+                    "The place search service is temporarily rate-limiting "
+                    "requests. Wait and try again, or provide Latitude and "
+                    "Longitude columns to skip place search."
+                )
+            response.raise_for_status()
+            results = response.json().get("results", [])
+
+    if not results:
+        raise ValueError(
+            f"Place not found: {place}. Try a city and country, such as "
+            "'Chennai, India', or provide coordinates."
+        )
+
+    result = results[0]
+    address = ", ".join(
+        part
+        for part in (
+            result.get("name"),
+            result.get("admin1"),
+            result.get("country"),
+        )
+        if part
+    )
+    return (
+        float(result["latitude"]),
+        float(result["longitude"]),
+        address,
+    )
 
 
 def parse_location_csv(uploaded_file):
@@ -464,17 +492,17 @@ if location_file:
 else:
     st.subheader("Enter delivery locations")
 
-    default_text = """Name,Location,Payload_kg,Latitude,Longitude
-Depot,Vellore,0,12.9165,79.1325
-Delivery 1,Katpadi,5,12.9692,79.1559
-Delivery 2,Sathuvachari,5,12.9255,79.1332
-Delivery 3,Bagayam,8,12.8777,79.1328
-Delivery 4,Virudhampet,5,12.9079,79.1328
+    default_text = """Name,Location,Payload_kg
+Depot,Chennai,0
+Delivery 1,Poonamallee,2
+Delivery 2,Ambattur,2
+Delivery 3,Pallavaram,2
 """
 
     location_text = st.text_area(
-        "CSV format: Name,Location,Payload_kg,Latitude,Longitude "
-        "(coordinates are optional; enter both to skip geocoding)",
+        "Enter city or town names in the Location column (for example, "
+        "Chennai or Chennai, India). Add Latitude and Longitude columns to "
+        "use coordinates instead.",
         value=default_text,
         height=180,
     )

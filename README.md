@@ -1,7 +1,7 @@
 # Drone Delivery Route Optimizer
 
-A Streamlit website for optimizing drone delivery routes. It geocodes locations
-with OpenStreetMap, compares available drones against payload and range
+A Streamlit website for optimizing drone delivery routes. It looks up city and
+place names with Open-Meteo, compares available drones against payload and range
 assumptions, displays the selected route on an interactive map, and exports the
 route as CSV.
 
@@ -25,11 +25,11 @@ Open the local URL printed by Streamlit, usually `http://localhost:8501`.
 4. Choose **Apply** to build and deploy. Render provides the website URL when
    deployment completes.
 
-Location rows can include optional `Latitude` and `Longitude` columns. Providing
-both coordinates skips geocoding and avoids public geocoder rate limits. If
-coordinates are omitted, the app looks up the location with OpenStreetMap's
-public Nominatim service, which is rate-limited; wait and try again if it
-temporarily rejects requests.
+Edit the `Location` values in the sample CSV to use your own cities and towns,
+such as `Chennai`, `Bengaluru`, or `Avadi`. Add a country if a place name is
+ambiguous. Location names are looked up with Open-Meteo. Alternatively,
+location CSVs can include both `Latitude` and `Longitude` columns to skip
+place-name lookup.
 
 This is planning/demo software, not flight authorization. Verify regulatory,
 airspace, weather, and battery-reserve requirements before any real operation.
