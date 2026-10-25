@@ -467,9 +467,9 @@ else:
     default_text = """Name,Location,Payload_kg,Latitude,Longitude
 Depot,Vellore,0,12.9165,79.1325
 Delivery 1,Katpadi,5,12.9692,79.1559
-Delivery 2,Chittoor,5,13.2172,79.1003
-Delivery 3,Tirupati,8,13.6288,79.4192
-Delivery 4,Chennai,5,13.0827,80.2707
+Delivery 2,Sathuvachari,5,12.9255,79.1332
+Delivery 3,Bagayam,8,12.8777,79.1328
+Delivery 4,Virudhampet,5,12.9079,79.1328
 """
 
     location_text = st.text_area(
