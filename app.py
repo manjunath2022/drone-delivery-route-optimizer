@@ -189,6 +189,12 @@ def geocode_place(place):
     response = requests.get(
         url, params=params, headers=headers, timeout=15
     )
+    if response.status_code == 429:
+        raise ValueError(
+            "OpenStreetMap's geocoder is temporarily rate-limiting requests. "
+            "Wait and try again, or provide Latitude and Longitude columns in "
+            "your location CSV to skip geocoding."
+        )
     response.raise_for_status()
     data = response.json()
 
@@ -202,11 +208,11 @@ def parse_location_csv(uploaded_file):
     """
     Accepted columns:
       Name, Location, Payload_kg
+      Latitude and Longitude are optional; supply both to skip geocoding.
 
     Example:
-      Depot, Vellore, 0
-      Hospital 1, Katpadi, 5
-      Hospital 2, Chittoor, 8
+      Depot, Vellore, 0, 12.9165, 79.1325
+      Hospital 1, Katpadi, 5, 12.9692, 79.1559
     """
     df = pd.read_csv(uploaded_file)
 
@@ -221,7 +227,66 @@ def parse_location_csv(uploaded_file):
     if "Payload_kg" not in df.columns:
         df["Payload_kg"] = 0.0
 
-    return df[["Name", "Location", "Payload_kg"]].copy()
+    coordinate_columns = {"Latitude", "Longitude"}
+    present_coordinates = coordinate_columns.intersection(df.columns)
+    if present_coordinates and present_coordinates != coordinate_columns:
+        raise ValueError(
+            "Location CSV must include both Latitude and Longitude columns."
+        )
+
+    columns = ["Name", "Location", "Payload_kg"]
+    if present_coordinates:
+        columns.extend(["Latitude", "Longitude"])
+
+    return df[columns].copy()
+
+
+def location_coordinates(row):
+    latitude = row.get("Latitude")
+    longitude = row.get("Longitude")
+
+    latitude_missing = pd.isna(latitude) or str(latitude).strip() == ""
+    longitude_missing = pd.isna(longitude) or str(longitude).strip() == ""
+
+    if latitude_missing != longitude_missing:
+        raise ValueError(
+            f"Provide both Latitude and Longitude for {row['Name']}, or leave "
+            "both blank to look up the location."
+        )
+
+    if not latitude_missing:
+        try:
+            latitude = float(latitude)
+            longitude = float(longitude)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Latitude and Longitude for {row['Name']} must be numbers."
+            ) from exc
+
+        if (
+            not math.isfinite(latitude)
+            or not math.isfinite(longitude)
+            or not -90 <= latitude <= 90
+            or not -180 <= longitude <= 180
+        ):
+            raise ValueError(
+                f"Coordinates for {row['Name']} are outside valid latitude/"
+                "longitude ranges."
+            )
+
+        location = row.get("Location")
+        if pd.isna(location) or not str(location).strip():
+            location = f"{latitude}, {longitude}"
+        return latitude, longitude, str(location), "Provided coordinates"
+
+    location = row.get("Location")
+    if pd.isna(location) or not str(location).strip():
+        raise ValueError(
+            f"Enter a Location or provide coordinates for {row['Name']}."
+        )
+
+    latitude, longitude, address = geocode_place(str(location).strip())
+    return latitude, longitude, str(location).strip(), address
 
 
 def parse_drone_csv(uploaded_file):
@@ -399,16 +464,17 @@ if location_file:
 else:
     st.subheader("Enter delivery locations")
 
-    default_text = """Name,Location,Payload_kg
-Depot,Vellore,0
-Delivery 1,Katpadi,5
-Delivery 2,Chittoor,5
-Delivery 3,Tirupati,8
-Delivery 4,Chennai,5
+    default_text = """Name,Location,Payload_kg,Latitude,Longitude
+Depot,Vellore,0,12.9165,79.1325
+Delivery 1,Katpadi,5,12.9692,79.1559
+Delivery 2,Chittoor,5,13.2172,79.1003
+Delivery 3,Tirupati,8,13.6288,79.4192
+Delivery 4,Chennai,5,13.0827,80.2707
 """
 
     location_text = st.text_area(
-        "CSV format: Name,Location,Payload_kg",
+        "CSV format: Name,Location,Payload_kg,Latitude,Longitude "
+        "(coordinates are optional; enter both to skip geocoding)",
         value=default_text,
         height=180,
     )
@@ -436,10 +502,10 @@ if st.button("🚀 Calculate Best Delivery Route", type="primary"):
             geocoded = []
 
             for _, row in locations.iterrows():
-                lat, lon, display_name = geocode_place(str(row["Location"]))
+                lat, lon, location, display_name = location_coordinates(row)
                 geocoded.append({
                     "Name": str(row["Name"]),
-                    "Location": str(row["Location"]),
+                    "Location": location,
                     "Payload_kg": float(row["Payload_kg"]),
                     "Latitude": lat,
                     "Longitude": lon,

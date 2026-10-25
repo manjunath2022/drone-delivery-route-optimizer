@@ -25,9 +25,11 @@ Open the local URL printed by Streamlit, usually `http://localhost:8501`.
 4. Choose **Apply** to build and deploy. Render provides the website URL when
    deployment completes.
 
-The app uses OpenStreetMap's public Nominatim service to look up location
-coordinates. Its public geocoding service is rate-limited, so location lookups
-are spaced out; avoid repeatedly submitting the same large delivery list.
+Location rows can include optional `Latitude` and `Longitude` columns. Providing
+both coordinates skips geocoding and avoids public geocoder rate limits. If
+coordinates are omitted, the app looks up the location with OpenStreetMap's
+public Nominatim service, which is rate-limited; wait and try again if it
+temporarily rejects requests.
 
 This is planning/demo software, not flight authorization. Verify regulatory,
 airspace, weather, and battery-reserve requirements before any real operation.
