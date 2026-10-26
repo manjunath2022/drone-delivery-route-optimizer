@@ -1,5 +1,6 @@
 
 
+import hashlib
 import itertools
 import math
 from io import StringIO
@@ -436,14 +437,43 @@ with st.sidebar:
     if drone_file:
         try:
             drones = parse_drone_csv(drone_file)
-            st.success(f"Loaded {len(drones)} drone models.")
         except Exception as e:
             st.error(str(e))
-            drones = DEFAULT_DRONES.copy()
+            st.stop()
     else:
         drones = DEFAULT_DRONES.copy()
 
-    st.dataframe(drones, use_container_width=True, hide_index=True)
+    drone_upload_id = (
+        hashlib.sha256(drone_file.getvalue()).hexdigest()[:12]
+        if drone_file
+        else "default"
+    )
+    drones = st.data_editor(
+        drones,
+        key=f"drone_editor_{drone_upload_id}",
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Drone": st.column_config.TextColumn("Drone", required=True),
+            "Payload_kg": st.column_config.NumberColumn(
+                "Payload (kg)", min_value=0.01
+            ),
+            "Range_km": st.column_config.NumberColumn(
+                "Range (km)", min_value=0.01
+            ),
+            "Cruise_kmh": st.column_config.NumberColumn(
+                "Cruise speed (km/h)", min_value=0.01
+            ),
+        },
+    )
+    st.download_button(
+        "Download drone data CSV",
+        data=drones.to_csv(index=False).encode("utf-8"),
+        file_name="drone_data.csv",
+        mime="text/csv",
+        key="download_drone_data",
+    )
 
     st.header("2. Location data")
 
@@ -500,9 +530,7 @@ Delivery 3,Pallavaram,2
 """
 
     location_text = st.text_area(
-        "Enter city or town names in the Location column (for example, "
-        "Chennai or Chennai, India). Add Latitude and Longitude columns to "
-        "use coordinates instead.",
+        "CSV format: Name,Location,Payload_kg",
         value=default_text,
         height=180,
     )
@@ -516,17 +544,83 @@ Delivery 3,Pallavaram,2
     if "Payload_kg" not in locations.columns:
         locations["Payload_kg"] = 0.0
 
+for coordinate_column in ("Latitude", "Longitude"):
+    if coordinate_column not in locations.columns:
+        locations[coordinate_column] = None
 
 st.subheader("Delivery locations")
 st.dataframe(locations, use_container_width=True, hide_index=True)
+st.download_button(
+    "Download delivery locations CSV",
+    data=locations.to_csv(index=False).encode("utf-8"),
+    file_name="delivery_locations.csv",
+    mime="text/csv",
+    key="download_delivery_locations",
+)
+
+locations = locations.dropna(how="all").copy()
 
 if len(locations) < 2:
     st.info("Add at least one depot and one delivery location.")
     st.stop()
 
+calculation_inputs = hashlib.sha256(
+    repr((
+        drones.to_json(orient="split"),
+        locations.to_json(orient="split"),
+        range_mode,
+        reserve_pct,
+        service_minutes,
+        optimize_for,
+    )).encode("utf-8")
+).hexdigest()
+
 if st.button("🚀 Calculate Best Delivery Route", type="primary"):
     with st.spinner("Finding coordinates and optimizing the route..."):
         try:
+            if drones.empty:
+                raise ValueError("Add at least one drone before calculating.")
+
+            for column in ("Drone", "Payload_kg", "Range_km", "Cruise_kmh"):
+                if column not in drones.columns:
+                    raise ValueError(f"Drone data is missing the {column} column.")
+
+            drones["Drone"] = drones["Drone"].fillna("").astype(str).str.strip()
+            if drones["Drone"].eq("").any():
+                raise ValueError("Every drone must have a name.")
+
+            for column in ("Payload_kg", "Range_km", "Cruise_kmh"):
+                drones[column] = pd.to_numeric(drones[column], errors="coerce")
+                if (
+                    drones[column].isna().any()
+                    or not drones[column].map(math.isfinite).all()
+                    or (drones[column] <= 0).any()
+                ):
+                    raise ValueError(
+                        f"Every drone must have a positive numeric {column} value."
+                    )
+
+            if not {"Name", "Location", "Payload_kg"}.issubset(locations.columns):
+                raise ValueError(
+                    "Delivery data must include Name, Location, and Payload_kg."
+                )
+
+            locations["Name"] = locations["Name"].fillna("").astype(str).str.strip()
+            if locations["Name"].eq("").any():
+                raise ValueError("Every delivery stop must have a name.")
+
+            locations["Payload_kg"] = pd.to_numeric(
+                locations["Payload_kg"], errors="coerce"
+            )
+            if (
+                locations["Payload_kg"].isna().any()
+                or not locations["Payload_kg"].map(math.isfinite).all()
+                or (locations["Payload_kg"] < 0).any()
+            ):
+                raise ValueError(
+                    "Every stop must have a non-negative numeric Payload_kg value."
+                )
+
             geocoded = []
 
             for _, row in locations.iterrows():
@@ -619,6 +713,13 @@ if st.button("🚀 Calculate Best Delivery Route", type="primary"):
                 st.dataframe(
                     result_df, use_container_width=True, hide_index=True
                 )
+                st.download_button(
+                    "⬇️ Download drone comparison CSV",
+                    data=result_df.to_csv(index=False).encode("utf-8"),
+                    file_name="drone_comparison.csv",
+                    mime="text/csv",
+                    key="download_drone_comparison",
+                )
                 st.stop()
 
             if optimize_for == "Minimum total time":
@@ -634,15 +735,19 @@ if st.button("🚀 Calculate Best Delivery Route", type="primary"):
             st.session_state["result_df"] = result_df
             st.session_state["best"] = best
             st.session_state["total_distance"] = total_distance
+            st.session_state["calculation_inputs"] = calculation_inputs
 
-        except Exception as e:
+        except (requests.RequestException, ValueError, TypeError, KeyError) as e:
             st.error(
                 f"Could not calculate the route: {e}"
             )
             st.stop()
 
 
-if "best" in st.session_state:
+if (
+    "best" in st.session_state
+    and st.session_state.get("calculation_inputs") == calculation_inputs
+):
     best = st.session_state["best"]
     ordered = st.session_state["route_df"]
     result_df = st.session_state["result_df"]
@@ -679,6 +784,13 @@ if "best" in st.session_state:
         use_container_width=True,
         hide_index=True,
     )
+    st.download_button(
+        "⬇️ Download drone comparison CSV",
+        data=result_df.to_csv(index=False).encode("utf-8"),
+        file_name="drone_comparison.csv",
+        mime="text/csv",
+        key="download_drone_comparison",
+    )
 
     st.subheader("📍 Optimized delivery order")
     display_cols = [
@@ -699,9 +811,10 @@ if "best" in st.session_state:
 
     st.download_button(
         "⬇️ Download optimized route CSV",
-        data=csv_output,
+        data=csv_output.encode("utf-8"),
         file_name="optimized_drone_route.csv",
         mime="text/csv",
+        key="download_optimized_route",
     )
 
     st.info(

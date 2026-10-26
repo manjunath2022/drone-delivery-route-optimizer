@@ -25,10 +25,14 @@ Open the local URL printed by Streamlit, usually `http://localhost:8501`.
 4. Choose **Apply** to build and deploy. Render provides the website URL when
    deployment completes.
 
-Edit the `Location` values in the sample CSV to use your own cities and towns,
-such as `Chennai`, `Bengaluru`, or `Avadi`. Add a country if a place name is
-ambiguous. Location names are looked up with Open-Meteo. Alternatively,
-location CSVs can include both `Latitude` and `Longitude` columns to skip
+The left sidebar keeps the drone CSV upload and drone table together. Edit drone
+names, payload capacity, range, and speed directly in that table; add or remove
+rows as needed. Delivery locations remain in the CSV text editor on the main
+page, and can also be provided using the delivery CSV upload in the sidebar.
+
+Download buttons export the current drone data, delivery locations, drone
+comparison, and optimized route as CSV files. Place names are looked up with
+Open-Meteo; alternatively, supply both `Latitude` and `Longitude` to skip
 place-name lookup.
 
 This is planning/demo software, not flight authorization. Verify regulatory,
