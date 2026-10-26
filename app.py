@@ -443,6 +443,17 @@ with st.sidebar:
     else:
         drones = DEFAULT_DRONES.copy()
 
+    primary_drone_columns = [
+        "Drone",
+        "Range_km",
+        "Payload_kg",
+        "Cruise_kmh",
+    ]
+    drones = drones[
+        primary_drone_columns
+        + [column for column in drones.columns if column not in primary_drone_columns]
+    ]
+
     drone_upload_id = (
         hashlib.sha256(drone_file.getvalue()).hexdigest()[:12]
         if drone_file
@@ -455,15 +466,17 @@ with st.sidebar:
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Drone": st.column_config.TextColumn("Drone", required=True),
-            "Payload_kg": st.column_config.NumberColumn(
-                "Payload (kg)", min_value=0.01
+            "Drone": st.column_config.TextColumn(
+                "Drone", required=True, width="small"
             ),
             "Range_km": st.column_config.NumberColumn(
-                "Range (km)", min_value=0.01
+                "Range (km)", min_value=0.01, width="small"
+            ),
+            "Payload_kg": st.column_config.NumberColumn(
+                "Payload (kg)", min_value=0.01, width="small"
             ),
             "Cruise_kmh": st.column_config.NumberColumn(
-                "Cruise speed (km/h)", min_value=0.01
+                "Speed (km/h)", min_value=0.01, width="small"
             ),
         },
     )
